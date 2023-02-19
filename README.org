@@ -218,73 +218,89 @@ Useful references:
 #+caption: Programm for controlling one car on the racetrack
 #+begin_src lisp :eval no
   ;; TODO change pins
-  ;; Aliases for the used pins
-  (defvar pin-controller 25 )
-  (defvar pin-input-1 6 )
-  (defvar pin-input-2 7 )
-  (defvar pin-input-4 8 )
-  ;; Should toggle when new input becomes ready
-  (defvar pin-input-ready 9 )
-  ;; Used for remembering the last state of input-ready
-  (defvar prev-input-ready -1)
+  ;; Alias for the controller pin
+  (defvar +controller-pin+ 25)
+  ;; List of the hall-sensor pins
+  (defvar +sensor-pins+ '(6 7 8 9 10 11 12))
+
+  ;; Closure that returns the number of the last passed checkpoint, or nil if no new checkpoint was past since the last call.
+  (defvar last-checkpoint
+    (let ((prev-checkpoint -1))
+      (lambda ()
+        (let ((sensor (first-active-sensor +sensor-pins+)))
+          (when (and sensor (/= sensor prev-checkpoint))
+            (setq prev-checkpoint sensor)
+            sensor)))))
+
+  (defun first-active-sensor (sensors &optional (idx 1))
+    "Return the index of the first active sensor or nil if no sensor was active."
+    (when sensors
+      (if (digitalread (car sensors))
+          idx
+        (first-active-sensor (cdr sensors) (+ idx 1)))))
 
   (defun throttle (v1 &optional t1 v2)
     "Change the throttle to v1.  Optional change to v2 after t1 milliseconds.  Valid values for v1 and v2 are 0-255."
-    (analogwrite pin-controller v1)
-    (if (and t1 v2)
-        (progn
-          (delay t1)
-          (analogwrite pin-controller v2))))
-
-  (defun binaryread (pin)
-    "Like digitalread but return 1 (high) or 0 (low)."
-    (if (digitalread pin) 1 0))
-
-  (defun last-checkpoint ()
-    "Return number of the last passed checkpoint, or nil if no new checkpoint was past since the last call."
-    (let ((ready (binaryread pin-input-ready)))
-      (if (= ready prev-input-ready)
-          nil
-        (progn
-          (setq prev-input-ready ready)
-          (+ (* 1 (binaryread pin-input-1))
-             (* 2 (binaryread pin-input-2))
-             (* 4 (binaryread pin-input-4)))))))
-
-  (defun last-checkpoint-mock ()
-    "Mock of last-checkpoint for testing."
-    (if (not (boundp 'lcm-round)) (defvar lcm-round 0))
-    (setq lcm-round (+ 1 lcm-round))
-    (if (= 0 (mod lcm-round 2000))
-        (let ((n (/ lcm-round 2000)))
-          (if (= 7 n) (setq lcm-round 0))
-          n)
-      nil))
+    (analogwrite +controller-pin+ v1)
+    (when (and t1 v2)
+      (delay t1)
+      (analogwrite +controller-pin+ v2)))
 
   (defun enter-loop (&optional rounds)
     "Enter the control loop.  Loop forever (default) or exit after rounds."
-    (dolist (io (list pin-input-1 pin-input-2 pin-input-4 pin-input-ready))
-      (pinmode io :input))
-    (throttle 64)
-    (let ((i 1))
-      (loop
-       (case (last-checkpoint)
-             (1 (throttle 255 400 32))
+    (mapcar (lambda (x) (pinmode x :input)) +sensor-pins+)
+    (throttle 64)  ;; Start speed until first checkpoint
+    (loop
+     (let ((checkpoint (last-checkpoint)))
+       (when checkpoint (princ checkpoint) (write-line "p"))  ;; XXX Only for debugging
+       (case checkpoint
+             (1 (throttle 255 400 32) (if rounds (decf rounds)))
              (2 (throttle 255 400 32))
              (3 (throttle 255 400 32))
              (4 (throttle 255 400 32))
              (5 (throttle 255 400 32))
              (6 (throttle 255 400 32))
-             (7 (throttle 255 400 32)
-                (if rounds
-                    (setq i (+ 1 i)))))
-       (if (and rounds (> i rounds))
-           (progn
+             (7 (throttle 255 400 32)))
+       (when (and rounds (< rounds 1))
              (throttle 0)
-             (return))))))
+             (return)))))
+#+end_src
+
+#+caption: Mock the digitalread function
+#+begin_src lisp :eval no
+  (defun digitalread () nil)
+  (defun mock-digitalread (pin-offset &optional (cycle 0))
+    "Mock digitralread for testing."
+    (setf digitalread
+          (lambda (pin)
+            (incf cycle)
+            (when (< (mod cycle 2000) 8)
+                (let ((n (/ cycle 2000)))
+                  (if (= 8 n) (setq cycle 0))
+                  (let ((x (- pin pin-offset n)))
+                    (and (> x -1) (<= x 0))))))))
+
+  (mock-digitalread 5)
 #+end_src
 
 #+caption: Test
 #+begin_src lisp :eval no
   (enter-loop 2)
+#+end_src
+
+#+caption: Test the mocked digitalread
+#+begin_src lisp :eval no
+  (dotimes (x 10000) (if (digitalread 7) (print x)))
+#+end_src
+
+* Playground
+#+caption: Test recursive lambdas
+#+begin_src lisp :eval no
+  (defvar myf (let* ((f (lambda (n)
+                          (print n)
+                          (if (> n 4)
+                              n
+                            (f (+ n 1))))))
+                (lambda (n) (f n))))
+  (myf 0)
 #+end_src
