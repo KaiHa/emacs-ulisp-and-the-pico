@@ -233,9 +233,9 @@ Useful references:
             sensor)))))
 
   (defun first-active-sensor (sensors &optional (idx 1))
-    "Return the index of the first active sensor or nil if no sensor was active."
+    "Return the index of the first (low) active sensor or nil if no sensor was active."
     (when sensors
-      (if (digitalread (car sensors))
+      (if (not (digitalread (car sensors)))
           idx
         (first-active-sensor (cdr sensors) (+ idx 1)))))
 
@@ -270,22 +270,23 @@ Useful references:
 #+begin_src lisp :eval no
   (defun digitalread () nil)
   (defun mock-digitalread (pin-offset &optional (cycle 0))
-    "Mock digitralread for testing."
+    "Mock digitralread for testing.  Nil means sensor is activated."
     (setf digitalread
           (lambda (pin)
             (incf cycle)
-            (when (< (mod cycle 2000) 8)
+            (if (< (mod cycle 2000) 8)
                 (let ((n (/ cycle 2000)))
-                  (if (= 8 n) (setq cycle 0))
+                  (if (<= 8 n) (setq cycle 0))
                   (let ((x (- pin pin-offset n)))
-                    (and (> x -1) (<= x 0))))))))
+                    (not (and (> x -1) (<= x 0)))))
+              t))))
 
   (mock-digitalread 5)
 #+end_src
 
 #+caption: Test
 #+begin_src lisp :eval no
-  (enter-loop 2)
+  (enter-loop 3)
 #+end_src
 
 #+caption: Test the mocked digitalread
