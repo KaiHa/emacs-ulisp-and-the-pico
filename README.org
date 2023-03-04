@@ -307,3 +307,29 @@ Useful references:
                 (lambda (n) (f n))))
   (myf 0)
 #+end_src
+
+#+begin_src lisp :eval no
+  (? with-servo)
+#+end_src
+
+#+begin_src lisp :eval no
+  (with-servo (str 25) (write-byte 0 str))
+#+end_src
+
+#+begin_src lisp :eval no
+  (with-servo (str 25) (print (read-byte str)))
+#+end_src
+
+#+begin_src lisp :eval no
+  (with-servo (str 25 '(1000 2000) 5) (print (read-byte str)))
+#+end_src
+
+#+begin_src lisp :eval no
+  (with-servo (str 25)
+    (print (read-byte str))
+    (write-byte 180 str)
+    (print (read-byte str))
+    (write-byte 3 str)
+    (print (read-byte str))
+    nil)
+#+end_src

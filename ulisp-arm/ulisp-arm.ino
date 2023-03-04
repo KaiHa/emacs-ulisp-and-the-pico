@@ -14,6 +14,7 @@ const char LispLibrary[] PROGMEM = "";
 // #define printgcs
 // #define sdcardsupport
 // #define gfxsupport
+#define servosupport
 // #define lisplibrary
 #define assemblerlist
 #define lineeditor
@@ -48,6 +49,10 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RS
 #define SDSIZE 91
 #else
 #define SDSIZE 0
+#endif
+
+#if defined(servosupport)
+#include <Servo.h>
 #endif
 
 // Platform specific settings
@@ -245,7 +250,7 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RS
 const int TRACEMAX = 3; // Number of traced functions
 enum type { ZZERO=0, SYMBOL=2, CODE=4, NUMBER=6, STREAM=8, CHARACTER=10, FLOAT=12, ARRAY=14, STRING=16, PAIR=18 };  // ARRAY STRING and PAIR must be last
 enum token { UNUSED, BRA, KET, QUO, DOT };
-enum stream { SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM };
+enum stream { SERIALSTREAM, I2CSTREAM, SPISTREAM, SDSTREAM, WIFISTREAM, STRINGSTREAM, GFXSTREAM, SERVOSTREAM };
 
 // Stream names used by printobject
 const char serialstream[] PROGMEM = "serial";
@@ -255,7 +260,8 @@ const char sdstream[] PROGMEM = "sd";
 const char wifistream[] PROGMEM = "wifi";
 const char stringstream[] PROGMEM = "string";
 const char gfxstream[] PROGMEM = "gfx";
-const char *const streamname[] PROGMEM = {serialstream, i2cstream, spistream, sdstream, wifistream, stringstream, gfxstream};
+const char servostream[] PROGMEM = "servo";
+const char *const streamname[] PROGMEM = {serialstream, i2cstream, spistream, sdstream, wifistream, stringstream, gfxstream, servostream};
 
 // Typedefs
 
@@ -296,7 +302,7 @@ typedef void (*pfun_t)(char);
 enum builtin_t { NIL, TEE, NOTHING, OPTIONAL, INITIALELEMENT, ELEMENTTYPE, BIT, AMPREST, LAMBDA, LET,
 LETSTAR, CLOSURE, PSTAR, SPECIAL_FORMS, QUOTE, OR, DEFUN, DEFVAR, SETQ, LOOP, RETURN, PUSH, POP, INCF,
 DECF, SETF, DOLIST, DOTIMES, TRACE, UNTRACE, FORMILLIS, TIME, WITHOUTPUTTOSTRING, WITHSERIAL, WITHI2C,
-WITHSPI, WITHSDCARD, WITHGFX, WITHCLIENT, DEFCODE, TAIL_FORMS, PROGN, IF, COND, WHEN, UNLESS, CASE, AND,
+WITHSPI, WITHSDCARD, WITHGFX, WITHCLIENT, WITHSERVO, DEFCODE, TAIL_FORMS, PROGN, IF, COND, WHEN, UNLESS, CASE, AND,
 HELP, FUNCTIONS, NOT, NULLFN, CONS, ATOM, LISTP, CONSP, SYMBOLP, ARRAYP, BOUNDP, SETFN, STREAMP, EQ, CAR,
 FIRST, CDR, REST, CAAR, CADR, SECOND, CDAR, CDDR, CAAAR, CAADR, CADAR, CADDR, THIRD, CDAAR, CDADR, CDDAR,
 CDDDR, LENGTH, ARRAYDIMENSIONS, LIST, MAKEARRAY, REVERSE, NTH, AREF, ASSOC, MEMBER, APPLY, FUNCALL,
@@ -2048,6 +2054,11 @@ inline int WiFiread () {
 }
 #endif
 
+#if defined(servosupport)
+Servo servo;
+inline int servoread () { return servo.read(); }
+#endif
+
 void serialbegin (int address, int baud) {
   #if defined(ULISP_SERIAL3)
   if (address == 1) Serial1.begin((long)baud*100);
@@ -2119,6 +2130,9 @@ gfun_t gstreamfun (object *args) {
   #if defined(ULISP_WIFI)
   else if (streamtype == WIFISTREAM) gfun = (gfun_t)WiFiread;
   #endif
+  #if defined(servosupport)
+  else if (streamtype == SERVOSTREAM) gfun = (gfun_t)servoread;
+  #endif
   else error2(NIL, PSTR("unknown stream type"));
   return gfun;
 }
@@ -2149,6 +2163,9 @@ inline void WiFiwrite (char c) { client.write(c); }
 #endif
 #if defined(gfxsupport)
 inline void gfxwrite (char c) { tft.write(c); }
+#endif
+#if defined(servosupport)
+inline void servowrite (char c) { servo.write(c); }
 #endif
 
 pfun_t pstreamfun (object *args) {
@@ -2193,6 +2210,9 @@ pfun_t pstreamfun (object *args) {
   #endif
   #if defined(ULISP_WIFI)
   else if (streamtype == WIFISTREAM) pfun = (pfun_t)WiFiwrite;
+  #endif
+  #if defined(servosupport)
+  else if (streamtype == SERVOSTREAM) pfun = (pfun_t)servowrite;
   #endif
   else error2(NIL, PSTR("unknown stream type"));
   return pfun;
@@ -2433,10 +2453,10 @@ void superprint (object *form, int lm, pfun_t pfun) {
   else supersub(form, lm + PPINDENT, 1, pfun);
 }
 
-const int ppspecials = 20;
+const int ppspecials = 21;
 const char ppspecial[ppspecials] PROGMEM =
   { DOTIMES, DOLIST, IF, SETQ, TEE, LET, LETSTAR, LAMBDA, WHEN, UNLESS, WITHI2C, WITHSERIAL, WITHSPI, WITHSDCARD, FORMILLIS,
-    WITHOUTPUTTOSTRING, DEFVAR, CASE, WITHGFX, WITHCLIENT };
+    WITHOUTPUTTOSTRING, DEFVAR, CASE, WITHGFX, WITHCLIENT, WITHSERVO };
 
 void supersub (object *form, int lm, int super, pfun_t pfun) {
   int special = 0, separate = 1;
@@ -3069,6 +3089,42 @@ object *sp_withclient (object *args, object *env) {
   #else
   (void) args, (void) env;
   error2(WITHCLIENT, PSTR("not supported"));
+  return nil;
+  #endif
+}
+
+object *sp_withservo (object *args, object *env) {
+  #if defined(servosupport)
+  object *params = first(args);
+  if (params == NULL) error2(WITHSERVO, nostream);
+  object *var = first(params);
+  int pin = checkinteger(WITHSERVO, eval(second(params), env));
+  object *rest = cddr(params);
+  object *pair = cons(var, stream(SERVOSTREAM, 0));
+  push(pair,env);
+  if (rest && first(rest)) {
+    object *minmax = eval(first(rest), env);
+    object *pmin = listp(minmax) ? first(minmax) : NULL;
+    object *pmax = listp(minmax) && (cdr(minmax)) ? second(minmax) : NULL;
+    if (pmin && pmax) {
+      if (cdr(rest) && second(rest)) {
+        servo.attach(pin,
+                     checkinteger(WITHSERVO, eval(pmin, env)),
+                     checkinteger(WITHSERVO, eval(pmax, env)),
+                     checkinteger(WITHSERVO, eval(second(rest), env)));
+      } else {
+        servo.attach(pin,
+                     checkinteger(WITHSERVO, eval(pmin, env)),
+                     checkinteger(WITHSERVO, eval(pmax, env)));
+      }
+    }
+  } else { servo.attach(pin); }
+  object *forms = cdr(args);
+  object *result = eval(tf_progn(forms,env), env);
+  servo.detach();
+  return result;
+  #else
+  error2(WITHSERVO, PSTR("not supported"));
   return nil;
   #endif
 }
@@ -5046,6 +5102,7 @@ const char string35[] PROGMEM = "with-spi";
 const char string36[] PROGMEM = "with-sd-card";
 const char string37[] PROGMEM = "with-gfx";
 const char string38[] PROGMEM = "with-client";
+const char string38b[] PROGMEM = "with-servo";
 const char string39[] PROGMEM = "defcode";
 const char string40[] PROGMEM = "";
 const char string41[] PROGMEM = "progn";
@@ -5489,6 +5546,11 @@ const char doc37[] PROGMEM = "(with-gfx (str) form*)\n"
 "to the graphics display using the standard uLisp print commands.";
 const char doc38[] PROGMEM = "(with-client (str [address port]) form*)\n"
 "Evaluates the forms with str bound to a wifi-stream.";
+const char doc38b[] PROGMEM = "(with-servo (str pin [(min max)] [value]) form*)\n"
+"Evaluates the forms with str bound to a servo-stream.\n"
+"The parameter pin specifies the pin of the servo.\n"
+"The optional parameter (min max) is the pulse width in microseconds that corresponds to the minimum/maximum.\n"
+"The optional parameter value is the initial value (valid range 0-180).";
 const char doc39[] PROGMEM = "(defcode name (parameters) form*)\n"
 "Creates a machine-code function called name from a series of 16-bit integers given in the body of the form.\n"
 "These are written into RAM, and can be executed by calling the function in the same way as a normal Lisp function.";
@@ -5955,6 +6017,7 @@ const tbl_entry_t lookup_table[] PROGMEM = {
   { string36, sp_withsdcard, 0x2F, doc36 },
   { string37, sp_withgfx, 0x1F, doc37 },
   { string38, sp_withclient, 0x12, doc38 },
+  { string38b, sp_withservo, 0x1F, doc38b},
   { string39, sp_defcode, 0x0F, doc39 },
   { string40, NULL, 0x00, NULL },
   { string41, tf_progn, 0x0F, doc41 },
