@@ -123,6 +123,8 @@ Use [[https://github.com/technoblogy/ulisp-arm][ARM version of μlisp]].
         (error "src-block language is not lisp"))
        (t
         (process-send-string "/dev/ttyACM0" (plist-get (cadr element) ':value))))))
+
+  (bind-key (kbd "C-S-c C-S-c") 'send-to-pico)
 #+end_src
 
 Now you can place the cursor on one of the lisp code blocks below and
