@@ -241,31 +241,31 @@ Useful references:
           idx
         (first-active-sensor (cdr sensors) (+ idx 1)))))
 
-  (defun throttle (v1 &optional t1 v2)
-    "Change the throttle to v1.  Optional change to v2 after t1 milliseconds.  Valid values for v1 and v2 are 0-255."
-    (analogwrite +controller-pin+ v1)
+  (defun throttle (servo v1 &optional t1 v2)
+    "Change the throttle to v1 by writing to servo.  Optional change to v2 after t1 milliseconds.  Valid values for v1 and v2 are 0-180."
+    (write-byte v1 servo)
     (when (and t1 v2)
       (delay t1)
-      (analogwrite +controller-pin+ v2)))
+      (write-byte v2 servo)))
 
   (defun enter-loop (&optional rounds)
     "Enter the control loop.  Loop forever (default) or exit after rounds."
     (mapcar (lambda (x) (pinmode x :input)) +sensor-pins+)
-    (throttle 64)  ;; Start speed until first checkpoint
-    (loop
-     (let ((checkpoint (last-checkpoint)))
-       (when checkpoint (princ checkpoint) (write-line "p"))  ;; XXX Only for debugging
-       (case checkpoint
-             (1 (throttle 255 400 32) (if rounds (decf rounds)))
-             (2 (throttle 255 400 32))
-             (3 (throttle 255 400 32))
-             (4 (throttle 255 400 32))
-             (5 (throttle 255 400 32))
-             (6 (throttle 255 400 32))
-             (7 (throttle 255 400 32)))
-       (when (and rounds (< rounds 1))
-             (throttle 0)
-             (return)))))
+    (with-servo (servo +controller-pin+ '(1000 2000) 45)
+     (loop
+      (let ((checkpoint (last-checkpoint)))
+        (when checkpoint (princ checkpoint) (write-line "p")) ;; XXX Only for debugging
+        (case checkpoint
+              (1 (throttle servo 180 400 45) (if rounds (decf rounds)))
+              (2 (throttle servo 180 400 45))
+              (3 (throttle servo 180 400 45))
+              (4 (throttle servo 180 400 45))
+              (5 (throttle servo 180 400 45))
+              (6 (throttle servo 180 400 45))
+              (7 (throttle servo 180 400 45)))
+        (when (and rounds (< rounds 1))
+          (throttle servo 0)
+          (return))))))
 #+end_src
 
 #+caption: Mock the digitalread function
